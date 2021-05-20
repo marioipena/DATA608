@@ -1,0 +1,420 @@
+---
+title: "DATA 608 Final Project"
+author: "Mario Pena"
+date: "May 23, 2021"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+Everyone shopping for a new car wants to choose something safe for themselves and their loved ones, but it’s not always easy to figure out which models make the safest choices. In my final project I am interested in finding out which vehicle or set of vehicles are the safest from a body injury perspective? I believe this is a relevant topic in today’s economy from the consumer’s point of view as some of the vehicles getting a 5-star safety rating could be cost prohibitive for some or provide a limited variety of choices. In this case, more detailed analyses of the injury criteria and attributes are warranted.
+
+
+# Data
+
+The data will be acquired from the National Highway Traffic Safety Administration (https://www-nrd.nhtsa.dot.gov/database/veh/veh.htm). The data to be used in this project provides information that refers to the performance and response of vehicles and other structures in impact. Some of the fields in the database include crash tests speed, conditions, tests’ barriers, airbag, car make and model, and injury values among others. NHTSA was established through the “Highway Safety Act’ and its mission has been to reduce deaths, injury and economic losses resulting from motor vehicle crashes. It started using the 5-Star safety ratings system in 1993 to help consumers make informed safety choices when buying vehicles.  
+
+
+# Objective
+
+Specifically, Which vehicle or set of vehicles are the safest from a head and leg injury perspective.
+
+
+# Injury Criteria
+
+Head Injury Criterion, Left Femur Load, Right Femur Load
+
+
+# Analyses and Attributes 
+
+### National Highway Traffic Safety Administration
+
+Based on the recommendations following this section, provided by the National Highway Traffic Safety Administration, we want to perform analyses to determine which vehicles have the best and worst injury severity ratings based upon the criteria listed below and using the following attributes.
+
+### Attributes
+
+vehicle make, Vehicle year, Vehicle body type, and occupant location (Left-front-seat, Right-front-seat). 
+
+### Motiviation
+
+The National Highway Traffic Safety Administration makes their recommendation using a star rating system. A greater number of Stars mean Safer Cars. 5-Star Safety Ratings measure the crashworthiness and rollover safety of vehicles. Five stars is the highest rating, one is the lowest. However, some of the vehicles getting a 5-star rating could be cost prohibitive for some consumers and provide a small variety of choices. In this instance, a more detailed analysis of the injury criteria and attributes are warranted.  
+
+**National Highway Traffic Safety Administration Recommendations**
+
+![National Highway Traffic Safety Administration Recommendations](images/Recommendations.png)
+
+The National Highway Traffic Safety Administration Recommendations provide a basis for vehicle safety for crashworthiness and rollover. The recommendation image provides a baseline for head, leg and chest injury.  In summary, the closer the value is to absolute 0, the less likely the occupant will have a severe injury.   
+
+
+# Preparing Environment
+
+```{r}
+#Loading Libraries
+library(DBI)
+library("knitr")
+library("tidyverse")
+library("stringr")
+library("plotly")
+library("htmlTable")
+library("stringr")
+library("stats")
+library("scales")
+library("viridis")
+library("wordcloud")
+```
+
+
+# Data Preparation for Summarized Analyses
+
+### Retrieve data from MySQL hosted in AWS
+
+```{r}
+cn <- dbConnect(drv      = RMySQL::MySQL(), 
+                username = "data622", 
+                password = "group4622", 
+                host     = "data622.c3alv39zxnhk.us-east-2.rds.amazonaws.com", 
+                port     = 3306, 
+                dbname   = "")
+data <- dbGetQuery(cn, "SELECT 
+RD.` MAKED`
+,MAX(`Head Injury Criterion`) AS HIC
+,MAX(`Left Femur Load`) AS LFL
+,MAX(`Right Femur Load`) AS RFL
+,MIN(`Head Injury Criterion`) AS min_HIC
+,MIN(`Left Femur Load`) AS min_LFL
+,MIN(`Right Femur Load`) AS min_RFL
+FROM
+(SELECT v.` MAKED`
+		, v.` YEAR`
+		, AVG(convert(o.` HIC`, SIGNED INTEGER)) AS `Head Injury Criterion`
+		, AVG(convert(o.` LFEM` , SIGNED INTEGER)) AS `Left Femur Load`
+		, AVG(convert(o.` RFEM` , SIGNED INTEGER)) AS `Right Femur Load`
+  FROM NHSA.test t
+  inner join NHSA.veh v
+  on(v.TSTNO = t.TSTNO)
+  inner join NHSA.occ o
+  on(o.TSTNO = v.TSTNO)
+  inner join NHSA.rest r
+  on(r.TSTNO = v.TSTNO)
+  AND (r.` VEHNO` = v.` VEHNO`)
+WHERE v.` MAKED` != 'NHTSA' 
+	AND v.` MAKED` NOT IN ('MCI') 
+	AND  v.` YEAR` != '' 
+	AND v.` YEAR` != 0 
+	AND  (o.` LFEM` != '' AND o.` LFEM` != 0) 
+	AND (o.` RFEM` != '' AND o.` RFEM` != 0)
+    AND r.` DEPLOYD` = 'DEPLOYED PROPERLY'
+GROUP BY
+	v.` MAKED`
+	,v.` YEAR`
+) AS RD
+GROUP BY 
+RD.` MAKED` 
+ORDER BY
+RD.` MAKED`")
+```
+
+```{r}
+head(data)
+```
+
+
+# Data Cleaning
+
+### Convert to numerics and truncate
+
+```{r}
+data$HIC <- as.numeric(gsub(",","", data$HIC))
+data$LFL <- as.numeric(gsub(",","", data$LFL))
+data$RFL <- as.numeric(gsub(",","", data$RFL))
+data$min_HIC <- as.numeric(gsub(",","", data$min_HIC))
+data$min_LFL <- as.numeric(gsub(",","", data$min_LFL))
+data$min_RFL <- as.numeric(gsub(",","", data$min_RFL))
+data$HIC <- trunc(data$HIC)
+data$LFL <- trunc(data$LFL)
+data$RFL <- trunc(data$RFL)
+data$min_HIC <- trunc(data$min_HIC)
+data$min_LFL <- trunc(data$min_LFL)
+data$min_RFL <- trunc(data$min_RFL)
+data$MAKED <- as.factor(data$' MAKED')
+```
+
+```{r}
+str(data)
+```
+
+
+# Challenges
+
+One of the challenges encountered was to find a way to simplify the analyses, given the large amount of data, in order to present it in a way that made the most sense to the reader. I Focused on Head Injury Criterion as I believe this to be one of the most important injuries of concern in the unfortunate event someone is involved in a car accident.
+
+
+# HIC Discussion
+
+The Head Injury Criterion (HIC) is a measure of the likelihood of head injury arising from an impact. The summarized data for HCI was generated by taking the maximum of HCI value for each vehicle make.
+
+The HIC can be used to assess safety related to vehicles, personal protective gear, and sport equipment. 
+
+Normally the variable is derived from the measurements of an accelerometer mounted at the center of mass of a crash test dummy's head, when the dummy is exposed to crash forces. This means that the HIC includes the effects of head acceleration and the duration of the acceleration. Large accelerations may be tolerated for very short times. 
+
+At a HIC of 1000, there is an 18% probability of a severe head injury, a 55% probability of a serious injury and a 90% probability of a moderate head injury to the average adult. 
+
+
+# Summarized Analyses
+
+### What is the maximum Head Injury Criterion per vehicle?
+
+Measured in integers, 0 to 9,999, HIC is the computed value of the head injury criterion, based on the resultant acceleration pulse for the head center of gravity. (https://www.intmath.com/applications-integration/hic-part2.php) Generally, experts agree that Head Injury Criterion (HIC) values above 1000 are life threatening.
+
+```{r}
+grid1 <- ggplot(data = data,aes(x=reorder(data$MAKED, data$HIC), y=data$HIC, fill = viridis(49), )) + 
+  theme(legend.position = "none", axis.text.y = element_text(size=6), axis.text.x = element_text(size=7)) +
+  geom_bar(stat = "identity") + 
+  geom_label(aes(label=data$HIC), position = position_dodge(width = 0.5), size = 2.4,   label.padding = unit(0.04, "lines"), label.size = 0.15, inherit.aes = TRUE)+
+  labs(title = "Maximum Head Injury Criterion", x = "Vehicles", y = "Severity")+
+  coord_flip()
+grid1
+```
+
+### What is minimum Head Injury Criterion per vehicle?
+
+```{r}
+grid4 <- ggplot(data = data,aes(x=reorder(data$MAKED, data$min_HIC), y=data$min_HIC, fill = viridis(49), )) + 
+  theme(legend.position = "none", axis.text.y = element_text(size=6), axis.text.x = element_text(size=7)) +
+  geom_bar(stat = "identity") + 
+  geom_label(aes(label=data$min_HIC), position = position_dodge(width = 0.5), size = 2.4,   label.padding = unit(0.04, "lines"), label.size = 0.15, inherit.aes = TRUE)+
+  labs(title = "Minimum Head Injury Criterion", x = "Vehicles", y = "Severity")+
+  coord_flip()
+grid4
+```
+
+The summarized view of the data for HCI does not reveal the details necessary for making a more informed decision about a vehicle. For example, suppose a potential vehicle buyer wanted to know these values based on the year, type of vehicle, location of the occputant, etc. The summarized views do not provide this level of detail, so it becomes necessary to retrieve data with year and type of vehicle, among other attributes.
+
+
+# Data Preparation with Additional Attributes  
+
+### Retrieve data from MySQL hosted in AWS
+
+```{r}
+cn <- dbConnect(drv      = RMySQL::MySQL(), 
+                username = "data622", 
+                password = "group4622", 
+                host     = "data622.c3alv39zxnhk.us-east-2.rds.amazonaws.com", 
+                port     = 3306, 
+                dbname   = "")
+data2 <- dbGetQuery(cn, "SELECT v.` MAKED`
+		, v.` YEAR`
+		, v.` BODYD`
+		, o.` OCCLOCD`
+		, o.` HIC` AS HIC
+		, o.` LFEM` AS LFL
+		, o.` RFEM` AS RFL
+  FROM NHSA.test t
+  inner join NHSA.veh v
+  on(v.TSTNO = t.TSTNO)
+  inner join NHSA.occ o
+  on(o.TSTNO = v.TSTNO)
+  inner join NHSA.rest r
+  on(r.TSTNO = t.TSTNO)
+WHERE v.` MAKED` != 'NHTSA' 
+	AND v.` MAKED` NOT IN ('MCI', 'OTHER') 
+	AND  (o.` LFEM` != '' AND o.` LFEM` != 0) 
+	AND (o.` RFEM` != '' AND o.` RFEM` != 0)
+	AND (r.` DEPLOYD` = N'DEPLOYED PROPERLY')
+	AND (o.` HIC` != '' AND o.` HIC` != 0)
+	AND (v.` YEAR` != 0 and v.` YEAR` != '')
+GROUP BY
+v.` MAKED`
+		, v.` YEAR`
+		, v.` BODYD`
+		, o.` OCCLOCD`
+		, o.` HIC` 
+		, o.` LFEM` 
+		, o.` RFEM` 
+ORDER BY v.` MAKED` ")
+```
+
+```{r}
+head(data2)
+```
+
+
+# Data Cleaning
+
+### Convert to numerics, factor and truncate
+
+```{r}
+data2$HIC <- as.numeric(gsub(",","", data2$HIC))
+data2$LFL <- as.numeric(gsub(",","", data2$LFL))
+data2$RFL <- as.numeric(gsub(",","", data2$RFL))
+data2$YEAR <- as.numeric(data2$' YEAR')
+data2$BODYD <- as.factor(data2$' BODYD')
+data2$MAKED <- as.factor(data2$' MAKED')
+data2$OCCLOCD <- as.factor(data2$' OCCLOCD')
+data2$HIC <- trunc(data2$HIC)
+data2$LFL <- trunc(data2$LFL)
+data2$RFL <- trunc(data2$RFL)
+```
+
+```{r}
+str(data2)
+```
+
+# Data Analyses with Additional Attributes 
+
+In order to simplify the analyses I have decided to separete head injury criterion and compare them against the attributes I thought were most relevant. I will add a column that averages the HCI by make, year, body type of the vehicle and occupant location in the vehicle.
+
+### Crash Test Distribution
+
+The vehicle make that has the highest frequency of crash test observations in the data is Ford, and is then followed by Toyota, Chevrolet, Honda, Dodge, and Nissan to name a few.
+
+```{r}
+attrMake <- data2 %>% group_by(MAKED) %>% summarise("Average HIC" = mean(HIC), Count = n())
+ggplot(attrMake, aes(x=reorder(MAKED, -Count), y=Count)) + geom_bar(stat="identity", width = 0.5, fill = "tomato2") + labs(x = "Vehicle Make", y = "Frequency", title = "Distribution of Crash Test Observations by Vehicle Make") + theme(axis.text.x = element_text(angle = 60, hjust = 1, size=8))
+```
+
+### Data Sample by Vehicle Make
+
+```{r}
+head(attrMake)
+```
+
+In the graphs below we can see from the crash tests that among the safest vehicle makes from a head injury perspective we find IH, Coda, Fiat, Jaguar, Smart Car, and Porsche among others.
+
+```{r}
+ggplot(attrMake, aes(x=reorder(MAKED, `Average HIC`), y=`Average HIC`)) + geom_bar(stat="identity", width = 0.5, fill = viridis(48)) + labs(x = "Vehicle Make", y = "AVG HIC", title = "Average HIC by Vehicle Make") + theme(axis.text.x = element_text(angle = 60, hjust = 1, size=8))
+```
+
+### Injury by Year
+
+```{r}
+attrYear <- data2 %>% group_by(YEAR) %>% summarise("Average HIC" = mean(HIC), Count = n())
+```
+
+### Data Sample by Year
+
+```{r}
+head(attrYear)
+```
+
+During 1999 The National Highway Traffic Safety Administration planned for upgrading the Federal Motor Vehicle Safety Standard (FMVSS). They added new crash specifications that required the use of additional dummies of various sizes as well as additional performance criteria that appropriately represent head injury thresholds.
+
+```{r}
+ggplot(attrYear, aes(x=YEAR, y=`Average HIC`)) + geom_line(color = "tomato2") + labs(x = "Year", y = "AVG HIC", title = "Average HIC by Year") + geom_point(color = "tomato2")
+```
+
+### Injury by Vehicle Body Type
+
+```{r}
+attrBody <- data2 %>% group_by(BODYD) %>% filter (BODYD != "OTHER") %>% summarise("Average HIC" = mean(HIC), Count = n())
+```
+
+### Data Sample by Vehicle Body Type
+
+```{r}
+head(attrBody)
+```
+
+According to the graphs below, among the safest vehicle body types from a head injury perspective we find that three door coupes, Trucks, 4 door pickups, and Minivans have the lowest injury averages.
+
+*Please Note: The category "OTHER" for body type has been removed as it is not clear what type of vehicles are included*
+
+```{r}
+ggplot(attrBody, aes(x=reorder(BODYD, `Average HIC`), y=`Average HIC`)) + geom_bar(stat="identity", width = 0.5, fill = magma(15)) + labs(x = "Body Type", y = "AVG HIC", title = "Average HIC by Vehicle Body Type") + theme(axis.text.x = element_text(angle = 60, hjust = 1, size=8))
+```
+
+### Injury by Occupant Location
+
+```{r}
+attrOcc <- data2 %>% group_by(OCCLOCD) %>% summarise("Average HIC" = mean(HIC), Count = n())
+```
+
+### Data Sample by Occupant Location
+
+```{r}
+head(attrOcc)
+```
+
+According to the graphs below, one of the safest places to sit in a vehicle in the unfortunate event of a crash is the left front seat. In other words, you are the most safe when you are the driver. The second safest place to sit is in the front passenger seat.
+
+```{r}
+ggplot(attrOcc, aes(x=reorder(OCCLOCD, `Average HIC`), y=`Average HIC`)) + geom_bar(stat="identity", width = 0.5, fill = plasma(8)) + labs(x = "Occupant Location", y = "AVG HIC", title = "Average HIC by Occupant Location") + theme(axis.text.x = element_text(angle = 60, hjust = 1, size=8))
+```
+
+
+# Additional Analyses
+
+Below we have another perspective for head injury criterion by occupant location looking at the data through boxplots. We can see that our boxplots agree with our analyses above, the two safest places to sit in a vehicle are in the driver seat and front passenger seat.
+
+```{r}
+qplot(OCCLOCD, HIC, data = data2, geom= "boxplot", fill = OCCLOCD) + labs(x = "Occupant Location", y = "HIC", title = "Head Injury Criterion by Occupant Location") + theme(axis.text.x = element_text(angle = 60, hjust = 1, size=8)) + theme(legend.position = "none")
+```
+
+We can also look at our data by comparing vehicle make, body type and head injury criterion in the same graph in order to have a better visualization of our aggregate data. 
+
+*Please Note: I have removed an observation (Chevrolet convertible) that was very far from the rest of the data in order to make the graph more readable. Additionally, the category "OTHER" for body type has been removed as it is not clear what type of vehicles are included*
+
+```{r}
+attrMakeBody <- data2 %>% group_by(MAKED, BODYD) %>% filter (MAKED != "CHEVROLET" | BODYD != "CONVERTIBLE", BODYD != "OTHER") %>% summarise("Average HIC" = mean(HIC), Count = n())
+```
+
+```{r}
+ggplot(attrMakeBody, aes(MAKED, `Average HIC`)) + geom_point(aes(color = BODYD)) + labs(x = "Vehicle Make", y = "AVG HIC", title = "Average HIC by Vehicle Make and Body Type") + theme(axis.text.x = element_text(angle = 60, hjust = 1, size=6), legend.title = element_text(size = 8), legend.text = element_text(size = 6)) + scale_color_discrete(name = "Body Type")
+```
+
+
+# Transformation
+
+The data obtained from the more granular query has many more rows with repeating fields of data. To get a better understanding of this data, we will transform into a easier visual  model.  
+
+```{r}
+library(data.tree)
+
+data2$pathString <- paste("Vehicle_Make", 
+                            data2$YEAR, 
+                            data2$MAKED, 
+                            data2$BODYD,
+                            data2$OCCLOCD,
+                            sep = "/")
+data2tree <- as.Node(data2)
+```
+
+Reasons for transformation:  It is increasingly becoming difficult to view the results because of the number of records in the resulset.  Every time another variable of interest is added it exponentially increases the output of records. The difficulty becomes in "visually" consuming the data without removing any of the results. The following data has been transformed into a tree structure and is still too large to consume visually, thus, I decided to answer the question using subsets of the data as depicted below.  
+
+```{r}
+print(data2tree, "HIC", "LFL", "RFL")
+```
+
+
+# Conclusion
+
+In the first output, I selected a couple of vehicles with the least amount of injury to head. In addition, two additional ranges of vehicles are provided, where minimal head injuries were reported.  These display results with vehicle year, vehicle body type, and occupant location in the vehicle. The occupant location, is the test dummy used to measure different crash impact forces.
+
+Difficulty Encountered: As mentioned above, visualizing the large number of rows is difficult. This presented challenges in displaying the results so a consumer could easily find their vehicle of choice. So, I decided to present the results in subsets of the overall results.    
+
+
+References:
+
+https://www.intmath.com/applications-integration/hic-part2.php
+
+https://www.nhtsa.gov/sites/nhtsa.dot.gov/files/vehdb-v4.pdf
+
+https://www.nhtsa.gov/sites/nhtsa.dot.gov/files/rev_criteria_0.pdf
+
+https://www.nhtsa.gov/sites/nhtsa.dot.gov/files/rev_criteria_0.pdf
+
+https://en.wikipedia.org > wiki > Head_injury_criterion
+
+https://www.safercar.gov/Vehicle-Shoppers
